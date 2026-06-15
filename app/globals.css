@@ -1,0 +1,200 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(10px); }
+}
+
+@keyframes float-slower {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(20px); }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  @apply bg-gradient-to-b from-sky-300 via-cyan-200 to-lime-100 text-slate-900 min-h-screen;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: -2;
+  background: radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.12) 0%, transparent 50%),
+              radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.1) 0%, transparent 50%),
+              radial-gradient(circle at 60% 20%, rgba(34, 197, 94, 0.08) 0%, transparent 50%);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 35%;
+  pointer-events: none;
+  z-index: -1;
+  background: linear-gradient(to top, rgba(134, 239, 172, 0.25) 0%, rgba(163, 230, 53, 0.15) 50%, transparent 100%);
+}
+
+/* Decorative blobs */
+.blob-1 {
+  position: fixed;
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle at 40% 40%, rgba(56, 189, 248, 0.25) 0%, rgba(34, 211, 238, 0.1) 70%);
+  border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
+  top: -80px;
+  right: -60px;
+  z-index: -1;
+  animation: float-slow 6s ease-in-out infinite;
+  filter: blur(20px);
+}
+
+.blob-2 {
+  position: fixed;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle at 60% 50%, rgba(251, 191, 36, 0.2) 0%, rgba(250, 204, 21, 0.08) 70%);
+  border-radius: 70% 30% 30% 70% / 70% 70% 30% 30%;
+  bottom: 10%;
+  left: -50px;
+  z-index: -1;
+  animation: float-slower 8s ease-in-out infinite;
+  filter: blur(25px);
+}
+
+.blob-3 {
+  position: fixed;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle at 50% 40%, rgba(236, 72, 153, 0.18) 0%, rgba(236, 72, 153, 0.05) 70%);
+  border-radius: 50% 50% 50% 50% / 30% 50% 50% 70%;
+  top: 25%;
+  left: 5%;
+  z-index: -1;
+  animation: float-slow 7s ease-in-out infinite;
+  filter: blur(22px);
+}
+
+.hero-decor {
+  position: absolute;
+  border-radius: 9999px;
+  opacity: 0.35;
+  filter: blur(18px);
+}
+
+.hero-decor-1 {
+  @apply top-10 left-6 w-20 h-20 bg-cyan-200/80;
+}
+
+.hero-decor-2 {
+  @apply top-16 right-10 w-24 h-24 bg-amber-200/80;
+}
+
+.hero-decor-3 {
+  @apply bottom-8 left-1/2 -translate-x-1/2 w-28 h-28 bg-pink-200/80;
+}
+
+.card {
+  @apply rounded-[2rem] bg-white/95 shadow-2xl overflow-hidden border border-white/70;
+  position: relative;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+}
+
+.card-accent-sky {
+  @apply border-t-4 border-sky-400 border-b border-sky-200;
+}
+
+.card-accent-cyan {
+  @apply border-t-4 border-cyan-400 border-b border-cyan-200;
+}
+
+.card-accent-amber {
+  @apply border-t-4 border-amber-400 border-b border-amber-200;
+}
+
+.card-accent-lime {
+  @apply border-t-4 border-lime-400 border-b border-lime-200;
+}
+
+.hero-badge {
+  @apply inline-flex items-center justify-center rounded-full bg-white/95 px-5 py-2 text-xs font-black uppercase tracking-[0.4em] text-slate-700 shadow-2xl border border-white/80;
+  box-shadow: 0 0 30px rgba(56, 189, 248, 0.4);
+}
+
+.btn-primary {
+  @apply rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500 px-6 py-4 font-bold text-white shadow-2xl transition transform;
+}
+
+.btn-primary:hover {
+  @apply shadow-xl scale-105;
+}
+
+.btn-primary:active {
+  @apply scale-95;
+}
+
+.btn-stop {
+  @apply rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 px-6 py-4 font-bold text-white shadow-lg transition;
+}
+
+.btn-stop:hover {
+  @apply shadow-xl;
+}
+
+.btn-ghost {
+  @apply rounded-2xl bg-white px-6 py-4 font-bold text-slate-700 shadow-lg border border-slate-200 transition;
+}
+
+.btn-ghost:hover {
+  @apply bg-slate-50 border-slate-300;
+}
+
+.badge-step {
+  @apply inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-200 to-orange-200 text-amber-800 shadow-md;
+}
+
+.pill-chip {
+  @apply inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-cyan-100 to-sky-100 text-cyan-700 font-semibold shadow-md;
+}
+
+.stat-card {
+  @apply rounded-[1.75rem] p-4 bg-gradient-to-br from-white via-blue-50 to-cyan-50 shadow-lg border border-blue-100;
+}
+
+@media (max-width: 640px) {
+  .btn-primary,
+  .btn-ghost,
+  .btn-stop {
+    @apply w-full;
+  }
+}
