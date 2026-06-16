@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   saveMyAnswers,
   stopRoom,
@@ -10,6 +11,8 @@ import {
 import type { PlayerRecord, RoomRecord } from "../lib/roomService";
 import { calculateScores, getRoundTotal } from "../lib/gameRules";
 import { GAME_MODES } from "../lib/gameModes";
+import { supabase } from "../lib/supabaseClient";
+import RoomChat, { type ChatMessage } from "./RoomChat";
 
 type Props = {
   room: RoomRecord;
@@ -25,6 +28,9 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
   const [selectedNextLetter, setSelectedNextLetter] = useState<string | null>(null);
   // Tracks whether this player's answers have been saved to Supabase this round
   const savedThisRoundRef = useRef(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const chatChannelRef = useRef<RealtimeChannel | null>(null);
 
   const categories =
     room.selected_categories && room.selected_categories.length > 0
@@ -82,6 +88,24 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room.status, myPlayer, room.id]);
 
+  useEffect(() => {
+    const channel = supabase
+      .channel(`room-chat-${room.id}`)
+      .on("broadcast", { event: "chat" }, ({ payload }) => {
+        const msg = payload as ChatMessage;
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          const next = [...prev, msg];
+          return next.length > 50 ? next.slice(-50) : next;
+        });
+      })
+      .subscribe();
+    chatChannelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [room.id]);
+
   function updateAnswer(category: string, value: string) {
     setAnswers((prev) => ({ ...prev, [category]: value }));
   }
@@ -134,6 +158,31 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
     }
   }
 
+  async function handleSendChat() {
+    const text = chatInput.trim().slice(0, 200);
+    if (!text || !myPlayer || !chatChannelRef.current) return;
+    const msg: ChatMessage = {
+      id: `${Date.now()}-${Math.random()}`,
+      playerId: myPlayer.id,
+      playerName: myPlayer.name,
+      text,
+      time: new Date().toLocaleTimeString("kk-KZ", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+    setChatInput("");
+    setChatMessages((prev) => {
+      const next = [...prev, msg];
+      return next.length > 50 ? next.slice(-50) : next;
+    });
+    await chatChannelRef.current.send({
+      type: "broadcast",
+      event: "chat",
+      payload: msg,
+    });
+  }
+
   // ── FINISHED ──────────────────────────────────────────────────────────────────
   if (room.status === "finished") {
     const sorted = [...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -178,6 +227,16 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
               ))}
             </div>
           </div>
+
+          {myPlayer && (
+            <RoomChat
+              messages={chatMessages}
+              myPlayerId={myPlayer.id}
+              input={chatInput}
+              onInputChange={setChatInput}
+              onSend={handleSendChat}
+            />
+          )}
         </section>
       </main>
     );
@@ -336,6 +395,16 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
                 : `Келесі әріпті ${stoppedByName ?? "ойыншы"} таңдайды...`}
             </div>
           )}
+
+          {myPlayer && (
+            <RoomChat
+              messages={chatMessages}
+              myPlayerId={myPlayer.id}
+              input={chatInput}
+              onInputChange={setChatInput}
+              onSend={handleSendChat}
+            />
+          )}
         </section>
       </main>
     );
@@ -429,6 +498,16 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
             </div>
           </aside>
         </div>
+
+        {myPlayer && (
+          <RoomChat
+            messages={chatMessages}
+            myPlayerId={myPlayer.id}
+            input={chatInput}
+            onInputChange={setChatInput}
+            onSend={handleSendChat}
+          />
+        )}
       </section>
     </main>
   );
