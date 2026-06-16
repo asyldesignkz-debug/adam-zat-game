@@ -64,13 +64,13 @@ export async function createRoom(hostName: string) {
       status: "lobby",
       mode: "classic",
       selected_categories: [],
-      current_round: 0,
+      
     })
     .select("*")
     .single();
 
   if (roomError) {
-    throw roomError;
+  throw new Error(roomError.message);
   }
 
   const { data: player, error: playerError } = await supabase
@@ -84,7 +84,7 @@ export async function createRoom(hostName: string) {
     .single();
 
   if (playerError) {
-    throw playerError;
+  throw new Error(playerError.message);
   }
 
   const { data: updatedRoom, error: updateError } = await supabase
@@ -97,7 +97,7 @@ export async function createRoom(hostName: string) {
     .single();
 
   if (updateError) {
-    throw updateError;
+  throw new Error(updateError.message);
   }
 
   return {
