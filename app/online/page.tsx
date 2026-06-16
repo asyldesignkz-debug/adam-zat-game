@@ -7,9 +7,16 @@ import {
   joinRoom,
   startRoom,
   subscribeToRoom,
+  updateRoomSettings,
   type PlayerRecord,
   type RoomRecord,
 } from "../../lib/roomService";
+import OnlineGameBoard from "../../components/OnlineGameBoard";
+import { GAME_MODES } from "../../lib/gameModes";
+import { ALL_CATEGORIES } from "../../lib/categories";
+import { getRandomLetter } from "../../lib/letters";
+
+const MIN_CATEGORIES = 5;
 
 export default function OnlineLobbyPage() {
   const [hostName, setHostName] = useState("");
@@ -25,7 +32,6 @@ export default function OnlineLobbyPage() {
 
   const refreshRoom = useCallback(async () => {
     if (!room?.code) return;
-
     const data = await getRoomByCode(room.code);
     setRoom(data.room);
     setPlayers(data.players);
@@ -33,11 +39,9 @@ export default function OnlineLobbyPage() {
 
   useEffect(() => {
     if (!room?.id) return;
-
     const unsubscribe = subscribeToRoom(room.id, () => {
       refreshRoom();
     });
-
     return () => {
       unsubscribe();
     };
@@ -49,8 +53,15 @@ export default function OnlineLobbyPage() {
       setMessage("");
 
       const result = await createRoom(hostName);
-      setRoom(result.room);
       setMyPlayer(result.player);
+
+      const defaultMode = GAME_MODES.find((m) => m.key === "classic")!;
+      const initialRoom = await updateRoomSettings(
+        result.room.id,
+        defaultMode.key,
+        defaultMode.suggestedCategories
+      );
+      setRoom(initialRoom);
 
       const fresh = await getRoomByCode(result.room.code);
       setPlayers(fresh.players);
@@ -85,19 +96,55 @@ export default function OnlineLobbyPage() {
     }
   }
 
+  async function handleModeChange(modeKey: string) {
+    if (!room?.id || !myPlayer?.is_host) return;
+    const gm = GAME_MODES.find((m) => m.key === modeKey);
+    try {
+      const updated = await updateRoomSettings(room.id, modeKey, gm?.suggestedCategories ?? []);
+      setRoom(updated);
+    } catch {
+      // subscription will refresh
+    }
+  }
+
+  async function handleCategoryToggle(category: string) {
+    if (!room?.id || !myPlayer?.is_host) return;
+    const current = room.selected_categories ?? [];
+    const next = current.includes(category)
+      ? current.filter((c) => c !== category)
+      : [...current, category];
+    try {
+      const updated = await updateRoomSettings(room.id, room.mode ?? "classic", next);
+      setRoom(updated);
+    } catch {
+      // subscription will refresh
+    }
+  }
+
   async function handleStartRoom() {
     if (!room?.id) return;
+
+    const catCount = (room.selected_categories ?? []).length;
+    if (catCount < MIN_CATEGORIES) {
+      setMessage(`Кем дегенде ${MIN_CATEGORIES} категория таңдаңыз (қазір ${catCount})`);
+      return;
+    }
 
     try {
       setLoading(true);
       setMessage("");
 
-      const updatedRoom = await startRoom(room.id);
+      const modeConfig = GAME_MODES.find((m) => m.key === room.mode) ?? GAME_MODES[0];
+      const letter = getRandomLetter(modeConfig.letters);
+      const updatedRoom = await startRoom(room.id, letter);
       setRoom(updatedRoom);
-
-      setMessage("Ойын басталды ✅");
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Ойынды бастау кезінде қате шықты";
+      const text =
+        error instanceof Error
+          ? error.message
+          : error && typeof error === "object" && "message" in error
+          ? String((error as { message: unknown }).message)
+          : "Ойынды бастау кезінде қате шықты";
       setMessage(text);
     } finally {
       setLoading(false);
@@ -105,13 +152,28 @@ export default function OnlineLobbyPage() {
   }
 
   const isHost = Boolean(myPlayer?.is_host);
+  const selectedCats = room?.selected_categories ?? [];
+
+  if (
+    room?.status === "playing" ||
+    room?.status === "stopped" ||
+    room?.status === "finished"
+  ) {
+    return (
+      <OnlineGameBoard
+        room={room}
+        players={players}
+        myPlayer={myPlayer}
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-sky-300 via-cyan-100 to-lime-200 px-4 py-8">
       <section className="mx-auto max-w-5xl">
         <div className="mb-8 rounded-[2rem] bg-white/80 p-6 text-center shadow-2xl backdrop-blur">
-          <div className="mx-auto mb-3 inline-flex rounded-full bg-gradient-to-r from-cyan-400 to-lime-400 px-5 py-2 text-sm font-bold text-white shadow-lg">
-            ONLINE LOBBY TEST
+          <div className="mx-auto mb-3 inline-flex rounded-full bg-gradient-to-r from-sky-500 to-emerald-500 px-5 py-2 text-sm font-bold text-white shadow-lg">
+            ONLINE
           </div>
 
           <h1 className="bg-gradient-to-r from-sky-500 via-emerald-500 to-yellow-500 bg-clip-text text-5xl font-black text-transparent md:text-6xl">
@@ -119,8 +181,7 @@ export default function OnlineLobbyPage() {
           </h1>
 
           <p className="mx-auto mt-4 max-w-2xl text-slate-600">
-            Бұл бет арқылы бөлме ашып, басқа смартфоннан кодпен кіріп, ойыншылар
-            тізімін realtime тексереміз.
+            Бөлме ашыңыз немесе кодпен кіріңіз. Ойыншылар қосылған соң host ойынды баптап бастайды.
           </p>
         </div>
 
@@ -193,6 +254,7 @@ export default function OnlineLobbyPage() {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
+            {/* Left: room code + players list */}
             <div className="rounded-[2rem] bg-white p-6 shadow-xl">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -207,15 +269,10 @@ export default function OnlineLobbyPage() {
                     </span>
                   </h2>
                 </div>
-
-                <div className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600">
-                  status: {room.status}
-                </div>
               </div>
 
               <p className="mb-6 text-slate-600">
-                Осы кодты басқа смартфонға жіберіңіз. Кірген ойыншылар төменде
-                realtime көрінуі керек.
+                Осы кодты басқа ойыншыларға жіберіңіз. Кірген ойыншылар төменде realtime көрінеді.
               </p>
 
               <div className="rounded-3xl bg-gradient-to-br from-cyan-100 to-lime-100 p-5">
@@ -261,23 +318,84 @@ export default function OnlineLobbyPage() {
               </div>
             </div>
 
+            {/* Right: game settings + start */}
             <div className="rounded-[2rem] bg-white p-6 shadow-xl">
               <div className="mb-4 inline-flex rounded-full bg-purple-100 px-4 py-1 text-sm font-bold text-purple-700">
-                Басқару
+                Ойын баптаулары
               </div>
 
-              <h3 className="mb-3 text-2xl font-black text-slate-900">
-                Ойынды бастау
+              <h3 className="mb-2 text-lg font-black text-slate-800">Ойын режимі</h3>
+
+              {isHost ? (
+                <div className="mb-5 flex flex-wrap gap-2">
+                  {GAME_MODES.map((gm) => (
+                    <button
+                      key={gm.key}
+                      onClick={() => handleModeChange(gm.key)}
+                      className={`rounded-full px-3 py-1.5 text-sm font-bold transition ${
+                        room.mode === gm.key
+                          ? "bg-sky-500 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {gm.title}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mb-5">
+                  <span className="rounded-full bg-sky-100 px-3 py-1.5 text-sm font-bold text-sky-700">
+                    {GAME_MODES.find((gm) => gm.key === room.mode)?.title ?? room.mode}
+                  </span>
+                </div>
+              )}
+
+              <h3 className="mb-2 text-lg font-black text-slate-800">
+                Категориялар
+                <span className="ml-2 text-sm font-semibold text-slate-400">
+                  ({selectedCats.length} таңдалды, кем дегенде {MIN_CATEGORIES})
+                </span>
               </h3>
 
-              <p className="mb-5 text-slate-600">
-                Қазір тек lobby realtime тексереміз. Келесі кезеңде ойын
-                жауаптары мен STOP синхрон қосылады.
-              </p>
+              {isHost ? (
+                <div className="mb-5 flex flex-wrap gap-2">
+                  {ALL_CATEGORIES.map((cat) => {
+                    const selected = selectedCats.includes(cat);
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => handleCategoryToggle(cat)}
+                        className={`rounded-full px-3 py-1.5 text-sm font-bold transition ${
+                          selected
+                            ? "bg-emerald-500 text-white"
+                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mb-5 flex flex-wrap gap-2">
+                  {selectedCats.length > 0 ? (
+                    selectedCats.map((cat) => (
+                      <span
+                        key={cat}
+                        className="rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-bold text-emerald-700"
+                      >
+                        {cat}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-slate-400">Категориялар таңдалмаған</span>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleStartRoom}
-                disabled={loading || !isHost || players.length < 2}
+                disabled={loading || !isHost || players.length < 2 || selectedCats.length < MIN_CATEGORIES}
                 className="w-full rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500 px-6 py-4 font-black text-white shadow-xl transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Ойынды бастау →
@@ -292,6 +410,12 @@ export default function OnlineLobbyPage() {
               {players.length < 2 && (
                 <p className="mt-3 text-sm text-slate-500">
                   Кемінде 2 ойыншы керек.
+                </p>
+              )}
+
+              {isHost && selectedCats.length < MIN_CATEGORIES && (
+                <p className="mt-3 text-sm font-semibold text-amber-600">
+                  Кем дегенде {MIN_CATEGORIES} категория таңдаңыз.
                 </p>
               )}
             </div>

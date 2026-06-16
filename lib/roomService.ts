@@ -10,6 +10,8 @@ export type RoomRecord = {
   selected_categories?: string[] | null;
   host_player_id?: string | null;
   current_round?: number | null;
+  current_letter?: string | null;
+  round_answers?: Record<string, unknown> | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -181,11 +183,13 @@ export async function getRoomByCode(code: string): Promise<RoomWithPlayers> {
   };
 }
 
-export async function startRoom(roomId: string) {
+export async function startRoom(roomId: string, letter: string) {
   const { data, error } = await supabase
     .from("rooms")
     .update({
       status: "playing",
+      current_letter: letter,
+      round_answers: { _round: 1 },
     })
     .eq("id", roomId)
     .select("*")
@@ -194,6 +198,100 @@ export async function startRoom(roomId: string) {
   if (error) {
     throw error;
   }
+
+  return data as RoomRecord;
+}
+
+export async function stopRoom(roomId: string) {
+  const { data, error } = await supabase
+    .from("rooms")
+    .update({ status: "stopped" })
+    .eq("id", roomId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return data as RoomRecord;
+}
+
+// Atomically merges one player's answers into rooms.round_answers via a DB function.
+// Avoids lost-update races when multiple players save simultaneously.
+export async function saveMyAnswers(
+  roomId: string,
+  playerId: string,
+  answers: Record<string, string>
+) {
+  const { error } = await supabase.rpc("merge_player_answers", {
+    p_room_id: roomId,
+    p_player_id: playerId,
+    p_answers: answers,
+  });
+  if (error) throw error;
+}
+
+export async function nextRound(
+  roomId: string,
+  newRound: number,
+  newLetter: string,
+  playerScoreUpdates: Array<{ playerId: string; newScore: number }>
+) {
+  // Best-effort: don't block round advancement if the score column is missing or update fails
+  await Promise.allSettled(
+    playerScoreUpdates.map(({ playerId, newScore }) =>
+      supabase.from("players").update({ score: newScore }).eq("id", playerId)
+    )
+  );
+
+  const { data, error } = await supabase
+    .from("rooms")
+    .update({
+      status: "playing",
+      current_letter: newLetter,
+      round_answers: { _round: newRound },
+    })
+    .eq("id", roomId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data as RoomRecord;
+}
+
+export async function finishRoom(
+  roomId: string,
+  playerScoreUpdates: Array<{ playerId: string; newScore: number }>
+) {
+  await Promise.allSettled(
+    playerScoreUpdates.map(({ playerId, newScore }) =>
+      supabase.from("players").update({ score: newScore }).eq("id", playerId)
+    )
+  );
+
+  const { data, error } = await supabase
+    .from("rooms")
+    .update({ status: "finished" })
+    .eq("id", roomId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return data as RoomRecord;
+}
+
+export async function updateRoomSettings(
+  roomId: string,
+  mode: string,
+  selectedCategories: string[]
+) {
+  const { data, error } = await supabase
+    .from("rooms")
+    .update({ mode, selected_categories: selectedCategories })
+    .eq("id", roomId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
 
   return data as RoomRecord;
 }

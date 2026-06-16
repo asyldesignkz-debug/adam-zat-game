@@ -34,14 +34,9 @@ if (!supabaseUrl.includes(".supabase.co")) {
   );
 }
 
-// Log safe debug info (hostname only, no secrets)
 try {
-  const url = new URL(supabaseUrl);
-  if (typeof window === "undefined") {
-    // Server-side only
-    console.log(`[Supabase] URL hostname: ${url.hostname}`);
-  }
-} catch (err) {
+  new URL(supabaseUrl);
+} catch {
   throw new Error(
     `Invalid NEXT_PUBLIC_SUPABASE_URL format. Must be a valid URL: ${supabaseUrl.substring(0, 50)}...`
   );
