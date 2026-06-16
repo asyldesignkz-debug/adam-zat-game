@@ -10,7 +10,6 @@ import {
 import type { PlayerRecord, RoomRecord } from "../lib/roomService";
 import { calculateScores, getRoundTotal } from "../lib/gameRules";
 import { GAME_MODES } from "../lib/gameModes";
-import { getRandomLetter } from "../lib/letters";
 
 type Props = {
   room: RoomRecord;
@@ -23,6 +22,7 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
   const [stopping, setStopping] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState("");
+  const [selectedNextLetter, setSelectedNextLetter] = useState<string | null>(null);
   // Tracks whether this player's answers have been saved to Supabase this round
   const savedThisRoundRef = useRef(false);
 
@@ -39,12 +39,27 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
     typeof rawAnswers["_round"] === "number"
       ? rawAnswers["_round"]
       : (room.current_round ?? 1);
+  // Filter ALL underscore-prefixed metadata keys; only player UUID keys remain
   const playerAnswerMap = Object.fromEntries(
-    Object.entries(rawAnswers).filter(([k]) => k !== "_round")
+    Object.entries(rawAnswers).filter(([k]) => !k.startsWith("_"))
   ) as Record<string, Record<string, string>>;
   const allFilled = categories.every((cat) => (answers[cat] ?? "").trim().length > 0);
   const isHost = Boolean(myPlayer?.is_host);
   const isLastRound = currentRound >= totalRounds;
+
+  // Who stopped this round (stored in round_answers by handleStop)
+  const stoppedByRaw = rawAnswers["_stoppedBy"];
+  const stoppedById =
+    stoppedByRaw && typeof stoppedByRaw === "object" && "id" in stoppedByRaw
+      ? String((stoppedByRaw as Record<string, unknown>).id)
+      : undefined;
+  const stoppedByName =
+    stoppedByRaw && typeof stoppedByRaw === "object" && "name" in stoppedByRaw
+      ? String((stoppedByRaw as Record<string, unknown>).name)
+      : undefined;
+  const isStopPlayer = Boolean(myPlayer?.id && myPlayer.id === stoppedById);
+  // Stop player picks the next letter; fall back to host if tracking failed
+  const canAdvance = stoppedById ? isStopPlayer : isHost;
 
   // Reset local answers when the round number changes (new round started)
   useEffect(() => {
@@ -52,6 +67,7 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
     setStopping(false);
     setAdvancing(false);
     setAdvanceError("");
+    setSelectedNextLetter(null);
     savedThisRoundRef.current = false;
   }, [currentRound]);
 
@@ -76,7 +92,7 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
       setStopping(true);
       savedThisRoundRef.current = true; // block the auto-save effect
       await saveMyAnswers(room.id, myPlayer.id, answers);
-      await stopRoom(room.id);
+      await stopRoom(room.id, myPlayer.id, myPlayer.name);
     } catch {
       setStopping(false);
       savedThisRoundRef.current = false;
@@ -84,7 +100,8 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
   }
 
   async function handleAdvance() {
-    if (!isHost || advancing) return;
+    if (!canAdvance || advancing) return;
+    if (!isLastRound && !selectedNextLetter) return;
     setAdvancing(true);
     try {
       const scores = calculateScores(
@@ -92,7 +109,7 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
         categories,
         playerAnswerMap,
         currentLetter,
-        null // no stored stopped_by; scoring without STOP bonus
+        null
       );
 
       const scoreUpdates = players.map((p) => ({
@@ -103,8 +120,7 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
       if (isLastRound) {
         await finishRoom(room.id, scoreUpdates);
       } else {
-        const newLetter = getRandomLetter(modeConfig.letters, currentLetter);
-        await nextRound(room.id, currentRound + 1, newLetter, scoreUpdates);
+        await nextRound(room.id, currentRound + 1, selectedNextLetter!, scoreUpdates);
       }
     } catch (err) {
       setAdvancing(false);
@@ -186,6 +202,9 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
               STOP
             </div>
             <h1 className="text-3xl font-black text-slate-900">Раунд тоқтады</h1>
+            {stoppedByName && (
+              <p className="mt-1 text-sm font-bold text-rose-500">{stoppedByName} тоқтатты</p>
+            )}
             <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm font-bold">
               <span className="rounded-full bg-slate-100 px-4 py-2 text-slate-600">
                 {currentRound}-раунд / {totalRounds}
@@ -265,19 +284,46 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
             })}
           </div>
 
-          {/* Host advance button */}
-          {isHost ? (
+          {/* STOP player picks next letter, then advances */}
+          {canAdvance ? (
             <div className="rounded-[2rem] bg-white p-6 shadow-xl">
+              {!isLastRound && (
+                <>
+                  <p className="mb-3 text-sm font-bold text-slate-600">
+                    Келесі раунд үшін әріп таңдаңыз:
+                  </p>
+                  <div className="mb-5 flex flex-wrap gap-2">
+                    {modeConfig.letters.map((letter) => (
+                      <button
+                        key={letter}
+                        onClick={() => setSelectedNextLetter(letter)}
+                        disabled={letter === currentLetter || advancing}
+                        className={`h-11 w-11 rounded-xl text-sm font-black transition ${
+                          selectedNextLetter === letter
+                            ? "bg-sky-500 text-white shadow-md"
+                            : letter === currentLetter
+                            ? "cursor-not-allowed bg-slate-100 text-slate-300"
+                            : "bg-slate-100 text-slate-700 hover:bg-sky-100 hover:text-sky-700"
+                        }`}
+                      >
+                        {letter}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
               <button
                 onClick={handleAdvance}
-                disabled={advancing}
+                disabled={advancing || (!isLastRound && !selectedNextLetter)}
                 className="w-full rounded-2xl bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-500 px-6 py-4 font-black text-white shadow-xl transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {advancing
                   ? "Өткізіліп жатыр..."
                   : isLastRound
                   ? "Ойынды аяқтау →"
-                  : `${currentRound + 1}-раундқа өту →`}
+                  : selectedNextLetter
+                  ? `${currentRound + 1}-раундқа өту →`
+                  : "Алдымен әріп таңдаңыз"}
               </button>
               {advanceError && (
                 <p className="mt-3 text-sm font-semibold text-red-600">{advanceError}</p>
@@ -285,7 +331,9 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
             </div>
           ) : (
             <div className="rounded-2xl bg-white/60 px-5 py-4 text-center text-sm font-semibold text-slate-500 shadow">
-              Келесі раундты host бастайды...
+              {isLastRound
+                ? `Ойынды ${stoppedByName ?? "ойыншы"} аяқтайды...`
+                : `Келесі әріпті ${stoppedByName ?? "ойыншы"} таңдайды...`}
             </div>
           )}
         </section>
@@ -313,22 +361,7 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
         <div className="grid gap-6 md:grid-cols-[1fr_280px]">
           {/* Answer inputs */}
           <div className="rounded-[2rem] bg-white p-6 shadow-xl">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <h2 className="text-xl font-black text-slate-800">Жауаптар</h2>
-              <button
-                onClick={handleStop}
-                disabled={!allFilled || stopping}
-                className="rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 px-6 py-3 font-black text-white shadow-lg transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {stopping ? "Тоқтатылуда..." : "STOP"}
-              </button>
-            </div>
-
-            {!allFilled && (
-              <p className="mb-4 text-sm font-semibold text-slate-400">
-                Барлық жауаптарды толтырсаңыз STOP белсенді болады.
-              </p>
-            )}
+            <h2 className="mb-5 text-xl font-black text-slate-800">Жауаптар</h2>
 
             <div className="grid gap-3">
               {categories.map((category) => (
@@ -346,6 +379,21 @@ export default function OnlineGameBoard({ room, players, myPlayer }: Props) {
                   />
                 </label>
               ))}
+            </div>
+
+            <div className="mt-5">
+              {!allFilled && (
+                <p className="mb-3 text-sm font-semibold text-slate-400">
+                  Барлық жауаптарды толтырсаңыз STOP белсенді болады.
+                </p>
+              )}
+              <button
+                onClick={handleStop}
+                disabled={!allFilled || stopping}
+                className="w-full rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 px-6 py-4 font-black text-white shadow-lg transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {stopping ? "Тоқтатылуда..." : "STOP"}
+              </button>
             </div>
           </div>
 

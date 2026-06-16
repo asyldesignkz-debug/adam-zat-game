@@ -202,16 +202,33 @@ export async function startRoom(roomId: string, letter: string) {
   return data as RoomRecord;
 }
 
-export async function stopRoom(roomId: string) {
+// Reads current round_answers, merges _stoppedBy, then writes status + round_answers
+// in ONE update so every client gets both fields in the same realtime event.
+export async function stopRoom(
+  roomId: string,
+  stoppedById: string,
+  stoppedByName: string
+) {
+  const { data: current, error: readErr } = await supabase
+    .from("rooms")
+    .select("round_answers")
+    .eq("id", roomId)
+    .single();
+  if (readErr) throw readErr;
+
+  const existing = ((current as Partial<RoomRecord>).round_answers ?? {}) as Record<string, unknown>;
+  const round_answers = {
+    ...existing,
+    _stoppedBy: { id: stoppedById, name: stoppedByName },
+  };
+
   const { data, error } = await supabase
     .from("rooms")
-    .update({ status: "stopped" })
+    .update({ status: "stopped", round_answers })
     .eq("id", roomId)
     .select("*")
     .single();
-
   if (error) throw error;
-
   return data as RoomRecord;
 }
 
